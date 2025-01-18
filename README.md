@@ -1,5 +1,5 @@
 # Домашнее задание к занятию «Отказоустойчивость в облаке»
-
+# Травицкий Сергей  
 ### Цель задания
 
 В результате выполнения этого задания вы научитесь:  
@@ -64,6 +64,131 @@
 
 *3. Скриншот страницы, которая открылась при запросе IP-адреса балансировщика.*
 
+**Основной Файл vms.tf**
+```
+#считываем данные об образе ОС
+data "yandex_compute_image" "ubuntu_2204_lts" {
+  family = "ubuntu-2204-lts"
+}
+
+resource "yandex_compute_instance" "vm" {
+  count = 2 
+  name        = "vm${count.index}" #Имя ВМ в облачной консоли
+  hostname    = "vm${count.index}" #формирует FDQN имя хоста, без hostname будет сгенрировано случаное имя.
+  platform_id = "standard-v3"
+  zone        = "ru-central1-a" #зона ВМ должна совпадать с зоной subnet!!!
+
+  resources {
+    cores         = 2
+    memory        = 2
+    core_fraction = 50
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu_2204_lts.image_id
+      type     = "network-hdd"
+      size     = 10
+    }
+  }
+
+  metadata = {
+    user-data          = file("./cloud-init.yml")
+    serial-port-enable = 1
+  }
+
+  scheduling_policy { preemptible = true }
+
+  network_interface {
+    subnet_id          = yandex_vpc_subnet.develop_a.id #зона ВМ должна совпадать с зоной subnet!!!
+    nat                = true
+  }
+}
+resource "yandex_lb_target_group" "group" {
+  name = "group"
+  target {
+    subnet_id = yandex_vpc_subnet.develop_a.id
+    address = yandex_compute_instance.vm[0].network_interface.0.ip_address
+  }
+  target { 
+    subnet_id = yandex_vpc_subnet.develop_a.id
+    address = yandex_compute_instance.vm[1].network_interface.0.ip_address
+  }
+}
+resource "yandex_lb_network_load_balancer" "balancer1" {
+  name = "balancer1"
+  deletion_protection = "false"
+  listener {
+    name = "my-lb1"
+    port = 80
+    external_address_spec {
+      ip_version = "ipv4"
+    }
+  }
+  
+  attached_target_group {
+    target_group_id = yandex_lb_target_group.group.id
+    healthcheck {
+      name = "http"
+      http_options { 
+        port = 80
+        path = "/"
+      }
+    }
+  }
+}
+
+
+resource "local_file" "inventory" {
+  content  = <<-XYZ
+  [vm0]
+  ${yandex_compute_instance.vm[0].network_interface.0.nat_ip_address}
+ 
+  [vm1]
+  ${yandex_compute_instance.vm[1].network_interface.0.nat_ip_address}
+
+  XYZ
+  filename = "./hosts.ini"
+ }
+resource "null_resource" "run_ansible_playbook" {
+  provisioner "local-exec" {
+    command     = "until nc -zv ${yandex_compute_instance.vm[0].network_interface.0.nat_ip_address} 22; do echo 'Waiting for SSH to be available...'; sleep 5; done"
+    working_dir = path.module
+  }
+
+ provisioner "local-exec" {
+    command     = "until nc -zv ${yandex_compute_instance.vm[1].network_interface.0.nat_ip_address} 22; do echo 'Waiting for SSH to be available...'; sleep 5; done"
+    working_dir = path.module
+  }
+
+ provisioner "local-exec" {
+    command     = "ansible-playbook ./nginx_msql.yml"
+    working_dir = path.module
+
+  }
+
+}
+```
+*Подсети и группа безопасности*  
+[network](https://github.com/travickiy67/Resiliency-in-the-cloud/blob/main/files/network.tf)  
+
+*Playbook использовался в домашнем задании для установки anginx и mysql, база закоментирована*  
+
+[plybook](https://github.com/travickiy67/Resiliency-in-the-cloud/blob/main/files/nginx_msql.yml)  
+
+*Статус балансировщика*  
+
+![скриншот](https://github.com/travickiy67/Resiliency-in-the-cloud/blob/main/jmg/1.1.png)  
+
+*при подключении через сайт с разных машин распредиляет запросы по очереди*  
+
+![скриншот](https://github.com/travickiy67/Resiliency-in-the-cloud/blob/main/jmg/1.2.png)  
+
+![скриншот](https://github.com/travickiy67/Resiliency-in-the-cloud/blob/main/jmg/1.3.png)   
+
+*curl без параметров с одного хоста*  
+
+![скриншот](https://github.com/travickiy67/Resiliency-in-the-cloud/blob/main/jmg/1.4.png)  
 ---
 
 ## Задания со звёздочкой*
