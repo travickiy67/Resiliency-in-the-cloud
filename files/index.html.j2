@@ -1,0 +1,30 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+ <head>
+  <meta charset="utf-8">
+  <title> NGIИX by Ansible *_* </title>
+ </head>
+ <body>
+ <h1 style="color: red;">Травицкий Сергей</h1>
+<h1> Hello! It's Nginx server! Our setup is </h1>
+Hello, guest! You are in {{ ansible_facts.hostname }}<br>
+<br>
+ My IPv4 adress is {{ ansible_facts.all_ipv4_addresses }}<br>
+<br>
+My OS is {{ansible_facts.distribution }}<br>
+<br>
+Version of my OS {{ ansible_facts.distribution_version }}<br>
+<br>
+My total RAM {{ ansible_facts.memtotal_mb }}<br>
+<br>
+Myprocessor {{ansible_facts.processor }}<br>
+<br>
+<p> HDD {{ ansible_facts.devices.vda.partitions.vda2.size }} </p>
+<br>
+<p> NGIИX работает! </p>
+<br>
+<body>
+ </body>
+</html>
+<img src="/photo/low.jpg">
+<img src="./img/vxhuh.png" style="width:500px;height:500px;">

@@ -1,0 +1,98 @@
+---
+- hosts: vm1 vm0
+  become: yes
+  vars:
+    server_name: "nginx"
+    document_root: /var/www
+    app_root: html
+  tasks:
+    - name: Update apt cache and install Nginx
+      apt:
+        name: nginx
+        state: latest
+        update_cache: yes
+
+
+    - name: Create
+      file: path={{ document_root }}/{{ app_root }} state=directory owner=www-data group=www-data
+
+
+    - name: Set up HTML file
+      template:
+        src: index.html.j2
+        dest: /var/www/html/index.html
+        owner: www-data
+        group: www-data
+
+    - name: copy file
+      copy:
+        src: ./img
+        dest: /var/www/html/
+
+    - name: Apply Nginx template
+      template:
+        src: files/nginx.conf.j2
+        dest: /etc/nginx/sites-available/default
+      notify: Restart Nginx
+
+    - name: Enable new site
+      file:
+        src: /etc/nginx/sites-available/default
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+      notify: Restart Nginx
+
+    - name: Allow all access to tcp port 80
+      ufw:
+        rule: allow
+        port: '80'
+        proto: tcp
+
+  handlers:
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
+
+#- hosts: vm2
+#  vars:
+#    mysql_root_password: root
+#    mysql_user: root
+#    check_implicit_admin: yes
+#    priv: '*.*:ALL'
+#  become: yes
+#  tasks:
+#    - name: Update
+#      apt:
+#        update_cache: yes
+#    - name: Install mysql-server
+#      apt:
+#        name: mysql-server
+#        state: present
+#    - name: Start MySQL Server
+#      service:
+#        name: mysql
+#        state: started
+#        enabled: yes
+
+
+
+
+
+
+
+   # - name: update mysql root password for all root accounts
+  #    mysql_user:
+ #       name: root
+#        host: "{{ item }}"
+     #   password: "{{ mysql_root_password }}"
+    #    login_user: root
+   #     login_password: "{{ mysql_root_password }}"
+  #      check_implicit_admin: yes
+ #       priv: "*.*:ALL,GRANT"
+#      with_items:
+   #     - "{{ ansible_hostname }}"
+  #      - 127.0.0.1
+ #       - ::1
+#        - localhost
+
