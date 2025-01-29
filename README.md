@@ -220,4 +220,150 @@ resource "null_resource" "run_ansible_playbook" {
 
 *3. Скриншот страницы, которая открылась при запросе IP-адреса балансировщика.*
 
+- Основной файл конфигурации vms.tf остальные не менялись те же что и в первом задании.
+- nginx устанавливается автоматически, ip адреса вытащил с помощью скрипта script.sh из файла состояния
+- Использовал depends_on, чтобы  null_resource создавался посленим.
+- Создан time_sleep для ожидания загрузки vm.
+ ```
+ data "yandex_compute_image" "ubuntu_2204_lts" {
+  family = "ubuntu-2204-lts"
+}
 
+
+resource "yandex_compute_instance_group" "vm" {
+  name                = "vm"
+   service_account_id = "aje8v9g2qb161hgtbmmc"
+   description = "my description"
+  instance_template {
+    platform_id = "standard-v3"
+    resources {
+      memory = 2
+      cores  = 2
+    }
+
+    boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu_2204_lts.image_id
+      type     = "network-hdd"
+      size     = 10
+    }
+  }
+
+  scheduling_policy { preemptible = true }
+    network_interface {
+      network_id         = "${yandex_vpc_network.network-1.id}"
+      subnet_ids         = ["${yandex_vpc_subnet.subnet-1.id}"]
+      nat                = true
+
+    }
+
+    metadata = {
+    user-data          = file("./cloud-init.yml")
+    serial-port-enable = 1
+    }
+  }
+
+  scale_policy {
+    fixed_scale {
+      size = 2
+    }
+  }
+
+  allocation_policy {
+    zones = ["ru-central1-a"]
+  }
+
+ deploy_policy {
+    max_unavailable = 1
+    max_expansion   = 0
+  }
+
+  load_balancer {
+    target_group_name        = "target-group"
+    target_group_description = "Целевая группа Network Load Balancer"
+  }
+}
+
+resource "yandex_lb_network_load_balancer" "lb" {
+  name = "network-load-balancer-1"
+
+  listener {
+    name = "network-load-balancer-1-listener"
+    port = 80
+    external_address_spec {
+      ip_version = "ipv4"
+    }
+  }
+
+  attached_target_group {
+    target_group_id = yandex_compute_instance_group.vm.load_balancer.0.target_group_id
+
+    healthcheck {
+      name = "http"
+      http_options {
+        port = 80
+        path = "/index.html"
+      }
+    }
+  }
+}
+
+resource "yandex_vpc_network" "network-1" {
+  name = "network1"
+
+}
+
+resource "yandex_vpc_subnet" "subnet-1" {
+  name           = "subnet1"
+  zone           = "ru-central1-a"
+  network_id     = "${yandex_vpc_network.network-1.id}"
+  v4_cidr_blocks = ["192.168.10.0/24"]
+}
+
+output "lb-ip" {
+  value =yandex_lb_network_load_balancer.lb.listener
+}
+
+data "yandex_compute_instance_group" "vm" {
+  instance_group_id = "${yandex_compute_instance_group.vm.id}"
+}
+
+output "instancegroupvm_external_ip" {
+  value = "${data.yandex_compute_instance_group.vm.instances.*.network_interface.0.nat_ip_address}"
+
+}
+ resource "time_sleep" "wait_for_ingress_alb" {
+create_duration = "50s"
+  depends_on = [
+    yandex_compute_instance_group.vm
+    ]
+
+}
+
+resource "null_resource" "run_ansible_playbook" {
+provisioner "local-exec" {
+    command     = "./script.sh"
+    working_dir = path.module
+
+}
+
+
+  provisioner "local-exec" {
+    command     = "ansible-playbook ./nginx_msql.yml"
+    working_dir = path.module
+
+  }
+   depends_on = [time_sleep.wait_for_ingress_alb]
+
+}
+
+```
+*script.sh*
+```
+#! /bin/sh
+#cat terraform.tfstate | grep nat_ip_address | tail -2 | cut -c 40-54 > hosts.ini
+cat terraform.tfstate | grep nat_ip_address | cut -c 40-54 > hosts.ini
+sed -i 's/[;,"&]//g'  ./hosts.ini
+sort -u hosts.ini > host
+mv -f host hosts.in
+```
